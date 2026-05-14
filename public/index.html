@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Tumble Tier – V7 Mobile Card Fix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee+Shade&family=Luckiest+Guy&family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sky-0:#eef8ff;
+    --sky-1:#dff2ff;
+    --sky-2:#bfe6ff;
+    --blue:#7dbdf2;
+    --blue-deep:#4f93c8;
+    --cream:#fff7e8;
+    --cream-2:#ffeecf;
+    --red:#e74c4c;
+    --red-2:#c93030;
+    --ink:#334155;
+    --muted:#6b7c8f;
+    --shadow:rgba(79,147,200,.22);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background:
+      radial-gradient(circle at 16% 12%, rgba(248,184,208,.55), transparent 30%),
+      radial-gradient(circle at 84% 78%, rgba(191,230,255,.70), transparent 34%),
+      radial-gradient(circle at 50% 105%, rgba(255,238,207,.85), transparent 45%),
+      linear-gradient(135deg, #fdf3f7 0%, #eef8ff 44%, #fff7e8 100%);
+    color: var(--ink);
+    font-family: 'Poppins', 'Segoe UI', Arial, sans-serif;
+    height: 100%; width: 100%;
+    overflow: hidden; touch-action: none;
+  }
+  #shell {
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+    padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  }
+  #canvas-wrap {
+    position: relative;
+    width: min(900px, calc(100vw - 16px), calc(100svh - 16px));
+    aspect-ratio: 1 / 1;
+    margin: auto;
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 0 0 2px rgba(255,247,232,.95), 0 20px 70px rgba(79,147,200,.28), 0 0 42px rgba(248,184,208,.24);
+    background: var(--sky-0);
+  }
+  #canvas-wrap::before {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none; z-index: 2;
+    border-radius: 28px;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.17) 0 1px, transparent 1px 7px),
+      radial-gradient(circle at 50% 18%, transparent 0 58%, rgba(255,247,232,.18) 100%);
+    box-shadow: inset 0 0 45px rgba(125,189,242,.15), inset 0 0 90px rgba(248,184,208,.10);
+    mix-blend-mode: soft-light;
+  }
+  #canvas-wrap::after {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none; z-index: 3;
+    border-radius: 28px;
+    background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,.32) 42%, transparent 60%);
+    transform: translateX(-120%);
+    animation: cabinetSheen 5.8s ease-in-out infinite;
+  }
+  @keyframes cabinetSheen {
+    0%, 62% { transform: translateX(-120%); }
+    84%, 100% { transform: translateX(120%); }
+  }
+  #g {
+    display: block; background: var(--sky-0);
+    width: 100%; height: 100%;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none; -webkit-user-select: none;
+  }
+  #ui-layer {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    width: 100vw; min-height: 100svh;
+    padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    overflow-y: auto; overscroll-behavior: contain;
+    background:
+      radial-gradient(circle at 50% 20%, rgba(248,184,208,.45), transparent 34%),
+      linear-gradient(180deg, rgba(238,248,255,.96), rgba(255,247,232,.98));
+    z-index: 50;
+  }
+  #ui-layer.hidden { display: none; }
+  .panel {
+    background: linear-gradient(180deg, rgba(255,247,232,.96), rgba(238,248,255,.96));
+    padding: 28px 32px;
+    border-radius: 24px; border: 2px solid rgba(255,255,255,.88);
+    text-align: center; width: min(420px, calc(100vw - 28px));
+    max-height: calc(100svh - 28px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 0 16px 52px rgba(79,147,200,.24), 0 0 28px rgba(248,184,208,.20);
+  }
+  h1 {
+    color: var(--red-2);
+    font-family: 'Luckiest Guy', 'Poppins', sans-serif;
+    text-shadow: 0 4px 0 #fff7e8, 0 7px 0 rgba(125,189,242,.45), 0 0 18px rgba(231,76,76,.32);
+    margin: 0 0 6px;
+    font-size: clamp(2.15rem, 8.5vw, 4.15rem);
+    line-height: .92;
+    letter-spacing: 2px;
+    text-transform: lowercase;
+    -webkit-text-stroke: 1px rgba(79,147,200,.45);
+  }
+  .room-title { font-size: clamp(1.65rem, 6vw, 2.6rem); text-transform: uppercase; }
+  h2 { margin: 0 0 16px; color: var(--blue-deep); font-family:'Poppins', sans-serif; }
+  p  { color: var(--muted); margin: 4px 0 16px; font-size: 0.9rem; line-height:1.45; }
+  hr { border: none; border-top: 1px solid rgba(125,189,242,.28); margin: 18px 0; }
+  .game-note {
+    margin: 14px 0 18px; padding: 10px 12px;
+    border: 1px solid rgba(125,189,242,.45); border-radius: 16px;
+    background: rgba(255,255,255,.55); color: var(--ink);
+    font-size: .72rem; line-height: 1.45; text-align: left;
+  }
+  .game-note strong { color: var(--red-2); }
+  .inp {
+    width: 100%; padding: 12px 14px; margin: 6px 0;
+    border-radius: 999px; border: 1px solid rgba(125,189,242,.46);
+    background: rgba(255,255,255,.72); color: var(--ink); font-size: 15px; font-family:'Poppins', sans-serif;
+    text-align: center; text-transform: uppercase; letter-spacing: 1px;
+    outline: none; transition: border-color .2s, box-shadow .2s, background .2s;
+  }
+  .inp:focus { border-color: var(--red-2); box-shadow:0 0 0 4px rgba(231,76,76,.20); background:#fff; }
+  .btn {
+    background: linear-gradient(180deg, var(--blue), var(--blue-deep)); color: #fff; border: none;
+    padding: 12px 22px; font-size: 15px; font-family:'Poppins', sans-serif; border-radius: 999px;
+    cursor: pointer; font-weight: 800; margin: 5px;
+    width: calc(100% - 10px);
+    transition: transform .1s, filter .15s, box-shadow .15s; letter-spacing: .5px;
+    box-shadow: 0 8px 22px rgba(79,147,200,.24);
+  }
+  .btn:active { transform: scale(.97); }
+  .btn.green { background: linear-gradient(180deg, var(--red), var(--red-2)); }
+  .btn.green:hover, .btn:not(.green):hover { filter: brightness(1.04); box-shadow: 0 10px 28px rgba(248,184,208,.30); }
+  .player-list { list-style: none; padding: 0; margin: 12px 0; text-align: left; }
+  .player-list li { padding: 9px 12px; background: rgba(255,255,255,.62); border:1px solid rgba(125,189,242,.20); border-radius: 12px; margin-bottom: 6px; font-size: 0.9rem; color:var(--ink); }
+  #lobby-panel  { display: none; }
+  #loading-panel{ display: none; }
+
+  .panel::-webkit-scrollbar { width: 6px; }
+  .panel::-webkit-scrollbar-thumb { background: rgba(79,147,200,.35); border-radius: 999px; }
+  @media (max-width: 520px), (max-height: 740px) {
+    #ui-layer { justify-content: flex-start; }
+    .panel { padding: 18px 16px; border-radius: 20px; }
+    h1 { font-size: clamp(2rem, 13vw, 3.2rem); letter-spacing: 1px; }
+    .room-title { font-size: clamp(1.55rem, 8vw, 2.2rem); }
+    p { font-size: .82rem; margin-bottom: 10px; }
+    .game-note { font-size: .66rem; padding: 8px 10px; margin: 10px 0 12px; }
+    .inp, .btn { padding: 10px 12px; font-size: 14px; margin: 4px 0; }
+    hr { margin: 12px 0; }
+    .player-list { margin: 8px 0; }
+    .player-list li { padding: 7px 10px; }
+  }
+  @media (max-height: 620px) {
+    #ui-layer { align-items: center; }
+    .panel { padding: 14px 14px; }
+    h1 { font-size: clamp(1.75rem, 10vw, 2.6rem); margin-bottom: 2px; }
+    .game-note { font-size: .61rem; line-height: 1.35; }
+  }
+</style>
+</head>
+<body>
+
+<div id="shell">
+  <div id="canvas-wrap">
+    <div id="ui-layer">
+      <div id="menu-panel" class="panel">
+        <h1>tumble tier</h1>
+        <p>Official Rules Arcade Edition</p>
+        <div class="game-note"><strong>Official rules mode:</strong> Green gives points and another turn. Blue gives penalties or score changes. Red creates major penalties. <br><strong>Multiplayer motion rule:</strong> the ball motion on one computer is not guaranteed to match the ball motion on another computer. Each screen may animate the ball differently, but the final accepted slot/result is the one calculated by the player who initiated the throw.</div>
+        <input class="inp" type="text" id="playerName" placeholder="Your Name" maxlength="12">
+        <select class="inp" id="winScore" aria-label="Winning score">
+          <option value="10">Quick Play — First to 10</option>
+          <option value="20" selected>Standard Play — First to 20</option>
+        </select>
+        <button class="btn green" id="btn-create">Create Game Room</button>
+        <hr>
+        <input class="inp" type="text" id="roomCode" placeholder="4-Letter Room Code" maxlength="4">
+        <button class="btn" id="btn-join">Join Game</button>
+      </div>
+      <div id="lobby-panel" class="panel">
+        <h1 class="room-title">Room: <span id="display-room-code" style="color:#4f93c8;letter-spacing:3px"></span></h1>
+        <p>Waiting for players to join…</p>
+        <p id="target-score-line" style="margin-top:-8px;font-weight:800;color:#c93030">Target: 20 points</p>
+        <div class="game-note"><strong>Sync note:</strong> screens can show different ball paths. The throw initiator decides the final slot/result, then every player is snapped to that same final outcome.</div>
+        <ul class="player-list" id="lobby-players"></ul>
+        <button class="btn green" id="btn-start" style="display:none">▶ Start Game</button>
+      </div>
+      <div id="loading-panel" class="panel"><h2>Connecting…</h2></div>
+    </div>
+    <canvas id="g"></canvas>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+
+<script type="module">
+import { initializeApp }      from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion }
+                               from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+// ── Firebase ─────────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyDWoEB3qb7V5VYghlsykbdw0UUeLrZDjGw",
+  authDomain: "tumble-tier.firebaseapp.com",
+  projectId: "tumble-tier",
+  storageBucket: "tumble-tier.firebasestorage.app",
+  messagingSenderId: "388971747224",
+  appId: "1:388971747224:web:6bb865fc7ab66ca7853ded",
+};
+const app  = initializeApp(firebaseConfig);
+const db   = getFirestore(app);
+const auth = getAuth(app);
+
+// ── Deterministic RNG ──────────────────────────────────────────────────────────
+// FNV-1a hash + Mulberry32. Every value that affects launch physics comes from
+// the shared Firestore seed, not from local screen size or local Math.random().
+function seedToInt(str) {
+  let h = 0x811c9dc5;
+  str = String(str);
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+function makePRNG(seed) {
+  let s = seedToInt(seed);
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function pickFromSeed(seed, arr, salt='') {
+  return arr[Math.floor(makePRNG(seed + '|' + salt)() * arr.length)];
+}
+let rng = makePRNG('init');
+// ── Game Constants ────────────────────────────────────────────────────────────
+const CW = 900, CH = 900;
+const BX = 132, BY = 185, BW = 636, BH = 614;
+const BALL_R = 8, PEG_R = 4, PEG_DX = 31, PEG_DY = 36, PEG_ROWS = 12, PEG_OFF = 70;
+const N_SLOTS = 9, SLOT_W = Math.floor(BW / N_SLOTS), ZONE_H = 75, ZONE_Y = BH - ZONE_H;
+const HX = BX + BW / 2, HY = BY + 20;
+const SETTLE_F = 45, TIMEOUT_MS = 15000, PWR_PERIOD = 2000;
+// Fixed physics timestep: identical step size on every client regardless of frame rate
+const PHYS_STEP = 1000 / 120;
+const PCOL = ['#7dbdf2','#e74c4c','#9ed8b3','#f3c46b'];
+
+const ZONES = [
+  { col:'green', pts: 1, eff:'go_again',      lbl:'GO AGAIN' },
+  { col:'blue',  pts:-1, eff:'end_turn',       lbl:'END TURN' },
+  { col:'red',   pts: 0, eff:'eliminated',     lbl:'ELIM!'    },
+  { col:'green', pts: 2, eff:'go_again',       lbl:'GO AGAIN' },
+  { col:'blue',  pts: 0, eff:'swap_scores',    lbl:'SWAP'     },
+  { col:'red',   pts: 0, eff:'lose_next_turn', lbl:'SKIP TURN'},
+  { col:'green', pts: 3, eff:'go_again',       lbl:'GO AGAIN' },
+  { col:'blue',  pts: 1, eff:'end_turn',       lbl:'END TURN' },
+  { col:'red',   pts: 0, eff:'reset_score',    lbl:'RESET'    },
+];
+const ZBG = { green:'#e8f8ee', blue:'#e3f3ff', red:'#ffecec' };
+const ZFG = { green:'#62b47d', blue:'#5fa8dc', red:'#d94141' };
+const BCOL= { green:'#62b47d', blue:'#5fa8dc', red:'#d94141' };
+
+// ── DOM ───────────────────────────────────────────────────────────────────────
+const canvasWrap = document.getElementById('canvas-wrap');
+const uiLayer    = document.getElementById('ui-layer');
+const canvas     = document.getElementById('g');
+canvas.width = CW; canvas.height = CH;
+const ctx = canvas.getContext('2d');
+
+// ── Responsive square sizing ──────────────────────────────────────────────────
+// Canvas drawing always uses 900×900 logical pixels. CSS scales only the visible
+// frame, so layout, aiming and mobile touch coordinates remain stable.
+const isMobile = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+let currentScale = 1;
+const fs = n => Math.max(8, Math.round(n / currentScale));
+
+function applyScale() {
+  const r = canvas.getBoundingClientRect();
+  currentScale = r.width / CW || 1;
+}
+applyScale();
+addEventListener('resize', applyScale, { passive:true });
+addEventListener('orientationchange', () => setTimeout(applyScale, 250), { passive:true });
+// ── Pointer → logical canvas coords ──────────────────────────────────────────
+function toLogical(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  return [
+    (clientX - r.left) * (CW / r.width),
+    (clientY - r.top)  * (CH / r.height)
+  ];
+}
+
+// ── App state ─────────────────────────────────────────────────────────────────
+let myUid = null, currentRoom = null, isHost = false, unsubscribe = null;
+let fbState = { status:'menu', players:[], turnIndex:0, winScore:20 };
+
+const S = { WAIT:'wait', CHARGE:'charge', FLIGHT:'flight', RESULT:'result' };
+let localState = S.WAIT;
+let resMsg = '', resSlot = 0, ballCol = 'green';
+let aimX = HX, power = 0, chargeStart = null;
+
+// Kept separate from fbState so Firestore snapshot reassignment doesn't reset it
+let lastLaunchId = null;
+
+// ── Firebase auth ─────────────────────────────────────────────────────────────
+signInAnonymously(auth).then(u => { myUid = u.user.uid; })
+  .catch(() => alert('Auth failed. Check Firebase settings.'));
+
+// ── Panel helpers ─────────────────────────────────────────────────────────────
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
+  if (id) document.getElementById(id).style.display = 'block';
+}
+function generateCode() {
+  return Math.random().toString(36).substring(2, 6).toUpperCase();
+}
+
+// ── Create / Join / Start ─────────────────────────────────────────────────────
+document.getElementById('btn-create').onclick = async () => {
+  const name = document.getElementById('playerName').value.trim() || 'Host';
+  currentRoom = generateCode(); isHost = true;
+  const selectedWinScore = Number(document.getElementById('winScore').value) || 20;
+  await setDoc(doc(db, 'games', currentRoom), {
+    status:'lobby', turnIndex:0, winScore:selectedWinScore,
+    players:[{ uid:myUid, name, color:PCOL[0], score:0, active:true, skipNext:false }],
+    lastLaunch:null, lastResult:null, launchSeq:0,
+    rulesVersion:'official-computing-fundamentals-v1',
+  });
+  document.getElementById('display-room-code').innerText = currentRoom;
+  document.getElementById('target-score-line').innerText = `Target: ${selectedWinScore} points`;
+  document.getElementById('btn-start').style.display = 'block';
+  showPanel('lobby-panel');
+  listenToRoom();
+};
+
+document.getElementById('btn-join').onclick = async () => {
+  const name = document.getElementById('playerName').value.trim() || 'Player';
+  const code = document.getElementById('roomCode').value.toUpperCase();
+  if (!code) return;
+  const snap = await getDoc(doc(db, 'games', code));
+  if (snap.exists() && snap.data().status === 'lobby') {
+    currentRoom = code;
+    const cur = snap.data().players;
+    if (cur.length >= 4) return alert('Room is full!');
+    await updateDoc(doc(db, 'games', code), {
+      players: arrayUnion({ uid:myUid, name, color:PCOL[cur.length], score:0, active:true, skipNext:false }),
+    });
+    document.getElementById('target-score-line').innerText = `Target: ${snap.data().winScore || 20} points`;
+    showPanel('lobby-panel');
+    listenToRoom();
+  } else {
+    alert('Room not found or game already started.');
+  }
+};
+
+document.getElementById('btn-start').onclick = async () => {
+  if (isHost) await updateDoc(doc(db, 'games', currentRoom), { status:'playing' });
+};
+
+// ── Realtime sync ─────────────────────────────────────────────────────────────
+function listenToRoom() {
+  if (unsubscribe) unsubscribe();
+  unsubscribe = onSnapshot(doc(db, 'games', currentRoom), snap => {
+    const data = snap.data(); if (!data) return;
+    fbState = data;
+
+    // Update lobby list
+    if (document.getElementById('target-score-line')) {
+      document.getElementById('target-score-line').innerText = `Target: ${fbState.winScore || 20} points`;
+    }
+    if (fbState.status === 'lobby') {
+      document.getElementById('lobby-players').innerHTML =
+        fbState.players.map(p => `<li><strong style="color:${p.color}">${p.name}</strong></li>`).join('');
+    }
+
+    // Game start
+    if (fbState.status === 'playing' && !uiLayer.classList.contains('hidden')) {
+      uiLayer.classList.add('hidden');
+      applyScale();
+      buildWorld();
+      lastT = null;
+      requestAnimationFrame(loop);
+    }
+
+    // New launch — guard with lastLaunchId so snapshot re-fires don't re-launch
+    if (fbState.lastLaunch && fbState.lastLaunch.id !== lastLaunchId) {
+      lastLaunchId = fbState.lastLaunch.id;
+      const l = fbState.lastLaunch;
+      rng = makePRNG(l.seed);   // same seed → identical RNG sequence on every client
+      ballCol = l.ballCol;
+      triggerLocalLaunch(l.x, l.power);
+    }
+
+    // Result arrived — snap ball to the correct slot on ALL screens
+    if (fbState.lastResult && localState === S.FLIGHT) {
+      resSlot = fbState.lastResult.slot;
+      resMsg  = fbState.lastResult.msg;
+      if (ball) {
+        Body.setPosition(ball, { x: BX + resSlot * SLOT_W + SLOT_W / 2, y: BY + ZONE_Y + ZONE_H / 2 });
+        Body.setVelocity(ball, { x: 0, y: 0 });
+      }
+      spawnArcadeBurst(BX + resSlot * SLOT_W + SLOT_W / 2, BY + ZONE_Y + ZONE_H / 2, ZFG[ZONES[resSlot].col], 34, 6.2);
+      comboPulse = 28;
+      localState = S.RESULT;
+    }
+  });
+}
+
+// ── Physics ───────────────────────────────────────────────────────────────────
+const { Engine, World, Bodies, Body } = Matter;
+let eng, world, ball, pegs = [];
+let settleT = 0, lastSlot = null, flightMs = 0, turnEvaluated = false, physAccum = 0;
+let trail = [], flash = 0, arcadeParticles = [], comboPulse = 0;
+
+function buildWorld() {
+  eng = Engine.create(); eng.gravity.y = 0.5; eng.gravity.scale = 0.001;
+  world = eng.world; ball = null; pegs = [];
+  const WO = { isStatic:true, restitution:0.3, friction:0.5 };
+  const T = 22;
+  World.add(world, [
+    Bodies.rectangle(BX - T/2,      BY + BH/2,     T,  BH, WO),
+    Bodies.rectangle(BX + BW + T/2, BY + BH/2,     T,  BH, WO),
+    Bodies.rectangle(BX + BW/2,     BY + BH + T/2, BW, T,  WO),
+    Bodies.rectangle(BX + BW/2,     BY - T/2,      BW, T,  WO),
+  ]);
+  const zt = BY + ZONE_Y, zh = BY + BH - zt;
+  for (let i = 1; i < N_SLOTS; i++)
+    World.add(world, Bodies.rectangle(BX + i*SLOT_W, zt + zh/2, 4, zh,
+      { isStatic:true, restitution:0.15, friction:0.6 }));
+  for (let row = 0; row < PEG_ROWS; row++) {
+    const py = BY + PEG_OFF + row * PEG_DY;
+    const ox = (row % 2 === 1) ? PEG_DX / 2 : 0;
+    let px = BX + PEG_DX + ox;
+    while (px + PEG_R < BX + BW - PEG_R) {
+      const p = Bodies.circle(px, py, PEG_R, { isStatic:true, restitution:0.76, friction:0.25 });
+      pegs.push(p); World.add(world, p); px += PEG_DX;
+    }
+  }
+}
+
+function triggerLocalLaunch(ax, pwr) {
+  if (ball) { World.remove(world, ball); ball = null; }
+  const side = ax > HX ? 1 : (ax < HX ? -1 : (rng() > 0.5 ? 1 : -1));
+  const vx   = (ax - HX) * 0.025 * pwr + side * (0.5 + rng() * 1.0);
+  ball = Bodies.circle(ax, HY, BALL_R, { restitution:0.76, friction:0.18, frictionAir:0.003 });
+  Body.setVelocity(ball, { x: vx, y: 0 });
+  World.add(world, ball);
+  settleT = 0; lastSlot = null; flightMs = 0;
+  turnEvaluated = false; physAccum = 0;
+  trail = [];
+  flash = 24;
+  comboPulse = 18;
+  spawnArcadeBurst(ax, HY, BCOL[ballCol] || '#fff', 24, 5.2);
+  localState = S.FLIGHT;
+}
+
+function unstick() {
+  if (!ball) return;
+  const { x, y } = ball.position, v = ball.velocity;
+  if (y >= BY + PEG_OFF - 5 && y <= BY + ZONE_Y && Math.hypot(v.x, v.y) < 0.7) {
+    // Direction based on position so it's identical on all clients
+    const k = (x < HX ? 1 : -1) * 2.8;
+    Body.setVelocity(ball, { x: v.x + k, y: Math.max(v.y, 2.8) });
+  }
+}
+
+// ── Turn evaluation (active player only writes result to Firestore) ────────────
+const curPlayer = () => fbState.players[fbState.turnIndex];
+const isMyActiveTurn = () => curPlayer()?.uid === myUid;
+const isMyTurn  = () => isMyActiveTurn() && localState === S.WAIT;
+
+function evaluateTurn(slot) {
+  if (curPlayer()?.uid !== myUid || turnEvaluated) return;
+  turnEvaluated = true;
+
+  const z = ZONES[slot];
+  const players = JSON.parse(JSON.stringify(fbState.players));
+  const p = players[fbState.turnIndex];
+  const parts = [];
+
+  p.score += z.pts;
+  if (z.pts > 0) parts.push(`+${z.pts} PT${z.pts > 1 ? 'S' : ''}`);
+  else if (z.pts < 0) parts.push(`${z.pts} PT`);
+
+  let goAgain = false;
+  switch (z.eff) {
+    case 'go_again':       goAgain = true; parts.push('Go Again!'); break;
+    case 'end_turn':       parts.push('End Turn.'); break;
+    case 'eliminated':     p.active = false; parts.push(`${p.name} Eliminated!`); break;
+    case 'lose_next_turn': p.skipNext = true; parts.push('Lose Next Turn!'); break;
+    case 'reset_score':    p.score = 0; parts.push('Score Reset!'); break;
+    case 'swap_scores': {
+      const others = players.filter((x, i) => x.active && i !== fbState.turnIndex);
+      if (others.length) {
+        const swapRng = makePRNG((fbState.lastLaunch?.seed || currentRoom || 'swap') + '|swap');
+        const t = others[Math.floor(swapRng() * others.length)];
+        [p.score, t.score] = [t.score, p.score];
+        parts.push('Scores Swapped!');
+      }
+      break;
+    }
+  }
+
+  const targetScore = Number(fbState.winScore || 20);
+  let stillActive = players.filter(x => x.active);
+  const reachedTarget = p.active && p.score >= targetScore;
+  if (reachedTarget) parts.push(`Target ${targetScore} reached!`);
+
+  let nextIdx = fbState.turnIndex;
+  if (!goAgain && !reachedTarget) {
+    for (let i = 0; i < players.length; i++) {
+      nextIdx = (nextIdx + 1) % players.length;
+      if (!players[nextIdx].active) continue;
+      if (players[nextIdx].skipNext) { players[nextIdx].skipNext = false; continue; }
+      break;
+    }
+  }
+
+  let gameOver = false;
+  let winnerUid = null;
+  if (reachedTarget) {
+    gameOver = true;
+    winnerUid = p.uid;
+  } else if (stillActive.length <= 1) {
+    gameOver = true;
+    winnerUid = stillActive[0]?.uid || null;
+  }
+
+  updateDoc(doc(db, 'games', currentRoom), {
+    players, turnIndex: nextIdx,
+    lastResult: { slot, msg: parts.join('  ') },
+    ...(gameOver ? { status:'over', winnerUid, finalReason: reachedTarget ? 'target_score' : 'last_active' } : {}),
+  });
+}
+
+// ── Input: desktop + mobile through Pointer Events ───────────────────────────
+function updateAim(clientX, clientY) {
+  const [lx] = toLogical(clientX, clientY);
+  aimX = Math.max(BX + BALL_R + 4, Math.min(BX + BW - BALL_R - 4, lx));
+}
+
+let activePointer = null;
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  activePointer = e.pointerId;
+  canvas.setPointerCapture?.(e.pointerId);
+  if (localState === S.WAIT || localState === S.CHARGE) updateAim(e.clientX, e.clientY);
+  actionDown();
+}, { passive:false });
+canvas.addEventListener('pointermove', e => {
+  e.preventDefault();
+  if (activePointer !== null && e.pointerId !== activePointer) return;
+  if (localState === S.WAIT || localState === S.CHARGE) updateAim(e.clientX, e.clientY);
+}, { passive:false });
+canvas.addEventListener('pointerup', e => {
+  e.preventDefault();
+  if (activePointer !== null && e.pointerId !== activePointer) return;
+  if (localState === S.WAIT || localState === S.CHARGE) updateAim(e.clientX, e.clientY);
+  actionUp();
+  canvas.releasePointerCapture?.(e.pointerId);
+  activePointer = null;
+}, { passive:false });
+canvas.addEventListener('pointercancel', e => {
+  e.preventDefault();
+  canvas.releasePointerCapture?.(e.pointerId);
+  activePointer = null;
+  if (localState === S.CHARGE) localState = S.WAIT;
+}, { passive:false });
+
+let spaceHeld = false;
+window.addEventListener('keydown', e => {
+  if (e.code !== 'Space') return;
+  e.preventDefault();
+  if (e.repeat || spaceHeld) return;       // prevents chargeStart reset loop on PC
+  spaceHeld = true;
+  actionDown('keyboard');
+}, { passive:false });
+window.addEventListener('keyup', e => {
+  if (e.code !== 'Space') return;
+  e.preventDefault();
+  spaceHeld = false;
+  actionUp('keyboard');                    // reliably catches SPACE release
+}, { passive:false });
+window.addEventListener('blur', () => {
+  spaceHeld = false;
+  if (localState === S.CHARGE) { localState = S.WAIT; chargeStart = null; power = 0; }
+});
+
+function clearResult() {
+  if (ball) { World.remove(world, ball); ball = null; }
+  trail = [];
+  localState = S.WAIT;
+}
+function actionDown(source='pointer') {
+  if (localState === S.RESULT) { clearResult(); return; }
+  if (localState !== S.WAIT || !isMyActiveTurn()) return;
+  localState = S.CHARGE;
+  chargeStart = performance.now();
+  power = 0;
+}
+function actionUp(source='pointer') {
+  if (localState !== S.CHARGE || !isMyActiveTurn()) return;
+  const launchSeq = (fbState.launchSeq || 0) + 1;
+  const ax = Math.round(aimX * 1000) / 1000;
+  const pwr = Math.max(0.03, Math.round(power * 1000000) / 1000000);
+  const seed = `${currentRoom}|${launchSeq}|turn:${fbState.turnIndex}|x:${ax}|p:${pwr}`;
+  const randCol = pickFromSeed(seed, ['green','blue','red'], 'ball-color');
+  localState = S.FLIGHT; // immediate local feedback while Firestore snapshot returns
+  updateDoc(doc(db, 'games', currentRoom), {
+    launchSeq,
+    lastLaunch: { x:ax, power:pwr, id:`${launchSeq}-${seedToInt(seed)}`, seed, ballCol:randCol },
+    lastResult: null,
+  }).catch(err => {
+    console.error('Launch failed:', err);
+    localState = S.WAIT;
+  });
+}
+
+// ── Render helpers ────────────────────────────────────────────────────────────
+function rr(x,y,w,h,r) {
+  const R = Math.min(r,w/2,h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+R,y); ctx.lineTo(x+w-R,y); ctx.quadraticCurveTo(x+w,y,x+w,y+R);
+  ctx.lineTo(x+w,y+h-R); ctx.quadraticCurveTo(x+w,y+h,x+w-R,y+h);
+  ctx.lineTo(x+R,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-R);
+  ctx.lineTo(x,y+R); ctx.quadraticCurveTo(x,y,x+R,y);
+  ctx.closePath();
+}
+function fillRR(x,y,w,h,r,s){ctx.fillStyle=s;rr(x,y,w,h,r);ctx.fill();}
+function strokeRR(x,y,w,h,r,s,lw){ctx.strokeStyle=s;ctx.lineWidth=lw||1.5;rr(x,y,w,h,r);ctx.stroke();}
+function txt(s,x,y,col,font,align='center',base='middle'){
+  ctx.fillStyle=col;ctx.font=font;ctx.textAlign=align;ctx.textBaseline=base;ctx.fillText(s,x,y);
+}
+
+function drawArenaBackground(ts=0) {
+  const grd = ctx.createRadialGradient(CW/2, CH*.33, 60, CW/2, CH/2, 720);
+  grd.addColorStop(0, '#fff7e8');
+  grd.addColorStop(.50, '#eef8ff');
+  grd.addColorStop(1, '#dff2ff');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0,0,CW,CH);
+
+  ctx.save();
+  ctx.globalAlpha = .24;
+  ctx.strokeStyle = '#7dbdf2';
+  ctx.lineWidth = 1;
+  const drift = (ts * .012) % 44;
+  for (let x = -44 + drift; x < CW + 44; x += 44) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,CH); ctx.stroke(); }
+  for (let y = -44 + drift; y < CH + 44; y += 44) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(CW,y); ctx.stroke(); }
+
+  ctx.globalAlpha = .42;
+  for (let i=0;i<30;i++) {
+    const x = (i*97 + (ts*.018)) % CW;
+    const y = (i*53 + 110) % CH;
+    ctx.fillStyle = i%3===0 ? '#e74c4c' : (i%3===1 ? '#7dbdf2' : '#fff7e8');
+    ctx.beginPath(); ctx.arc(x,y, i%4===0?3.0:1.7, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Cozy bubble decorations
+  ctx.globalAlpha = .18;
+  ['#e74c4c','#7dbdf2','#fff7e8'].forEach((c, j) => {
+    ctx.strokeStyle = c; ctx.lineWidth = 5;
+    for (let i=0; i<4; i++) {
+      const x = (120 + i*210 + j*55 + ts*.01) % (CW+120) - 60;
+      const y = 120 + j*210 + ((i*37)%90);
+      ctx.beginPath(); ctx.arc(x, y, 18 + (i+j)*5, 0, Math.PI*2); ctx.stroke();
+    }
+  });
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = .82;
+  strokeRR(54,54,CW-108,CH-108,30,'rgba(255,247,232,.95)',3);
+  strokeRR(76,76,CW-152,CH-152,24,'rgba(248,184,208,.42)',2);
+  ctx.restore();
+}
+
+function drawTrail() {
+  if (!trail.length) return;
+  ctx.save();
+  for (let i=0;i<trail.length;i++) {
+    const t = trail[i], a = (i+1)/trail.length;
+    ctx.globalAlpha = a * .38;
+    ctx.fillStyle = BCOL[ballCol] || '#fff';
+    ctx.beginPath(); ctx.arc(t.x,t.y,BALL_R*(.25+a*.45),0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawLaunchFlash() {
+  if (flash <= 0) return;
+  ctx.save();
+  const a = Math.min(1, flash / 24);
+  ctx.globalAlpha = a;
+  ctx.strokeStyle = curPlayer()?.color || '#c93030';
+  ctx.lineWidth = 2 + a * 3;
+  ctx.beginPath(); ctx.arc(aimX, HY, 24 + (24-flash)*4.2, 0, Math.PI*2); ctx.stroke();
+  ctx.globalAlpha = a * .4;
+  ctx.beginPath(); ctx.arc(aimX, HY, 54 + (24-flash)*6, 0, Math.PI*2); ctx.stroke();
+  ctx.restore();
+  flash--;
+}
+
+function spawnArcadeBurst(x, y, color='#c93030', count=20, speed=4) {
+  for (let i=0; i<count; i++) {
+    const a = (Math.PI * 2 * i / count) + (rng ? rng() : Math.random()) * .35;
+    const v = speed * (.35 + (rng ? rng() : Math.random()) * .9);
+    arcadeParticles.push({
+      x, y,
+      vx: Math.cos(a) * v,
+      vy: Math.sin(a) * v,
+      life: 32 + Math.floor((rng ? rng() : Math.random()) * 20),
+      max: 52,
+      r: 1.5 + (rng ? rng() : Math.random()) * 3,
+      color
+    });
+  }
+  if (arcadeParticles.length > 180) arcadeParticles.splice(0, arcadeParticles.length - 180);
+}
+
+function drawArcadeParticles() {
+  if (!arcadeParticles.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = arcadeParticles.length - 1; i >= 0; i--) {
+    const p = arcadeParticles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= .965; p.vy = p.vy * .965 + .035;
+    p.life--;
+    if (p.life <= 0) { arcadeParticles.splice(i, 1); continue; }
+    const a = Math.max(0, p.life / p.max);
+    ctx.globalAlpha = Math.min(.9, a);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (.45 + a), 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawArcadeOverlay(ts=0) {
+  ctx.save();
+  ctx.globalAlpha = .07;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1;
+  for (let y = (ts * .05) % 18; y < CH; y += 18) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CW, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  if (comboPulse > 0) {
+    ctx.save();
+    const a = comboPulse / 28;
+    ctx.globalAlpha = .12 * a;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,CW,CH);
+    ctx.restore();
+    comboPulse--;
+  }
+}
+
+function drawBoard() {
+  ctx.save();
+  ctx.shadowBlur = 24; ctx.shadowColor = 'rgba(125,189,242,.28)';
+  const bg = ctx.createLinearGradient(BX,BY,BX,BY+BH);
+  bg.addColorStop(0,'#fff7e8'); bg.addColorStop(.55,'#eef8ff'); bg.addColorStop(1,'#dff2ff');
+  ctx.fillStyle=bg; rr(BX,BY,BW,BH,16); ctx.fill();
+  ctx.shadowBlur = 0;
+  const top = ctx.createLinearGradient(BX,BY,BX+BW,BY+PEG_OFF);
+  top.addColorStop(0,'#ffeecf'); top.addColorStop(1,'#fff7e8');
+  ctx.fillStyle=top; rr(BX,BY,BW,PEG_OFF,16); ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha=.28; ctx.strokeStyle='#7dbdf2'; ctx.lineWidth=1;
+  for(let x=BX+28;x<BX+BW;x+=28){ctx.beginPath();ctx.moveTo(x,BY+4);ctx.lineTo(x,BY+BH-4);ctx.stroke();}
+  for(let y=BY+28;y<BY+BH;y+=28){ctx.beginPath();ctx.moveTo(BX+4,y);ctx.lineTo(BX+BW-4,y);ctx.stroke();}
+  ctx.restore();
+  const zy = BY + ZONE_Y;
+  ZONES.forEach((z,i) => {
+    const zx = BX+i*SLOT_W, cx = zx+SLOT_W/2;
+    fillRR(zx,zy,SLOT_W,ZONE_H,0,ZBG[z.col]);
+    strokeRR(zx+.5,zy+.5,SLOT_W-1,ZONE_H-1,0,ZFG[z.col]+'88',1);
+    const icon = z.col === 'green' ? '◆' : z.col === 'blue' ? '⬢' : '✕';
+    txt(icon, cx, zy+18, ZFG[z.col], `bold ${fs(15)}px 'Poppins', Arial`);
+    if (z.pts !== 0) txt(z.pts>0?`+${z.pts}`:`${z.pts}`, cx, zy+39, '#334155', `bold ${fs(13)}px 'Poppins', Arial`);
+    if (currentScale > 0.52) txt(z.lbl, cx, zy+ZONE_H-10, '#6b7c8f', `${fs(9)}px 'Poppins', Arial`);
+  });
+  ctx.strokeStyle='rgba(125,189,242,.48)'; ctx.lineWidth=2;
+  [3,6].forEach(s => {
+    const sx = BX+s*SLOT_W;
+    ctx.beginPath(); ctx.moveTo(sx,zy-8); ctx.lineTo(sx,BY+BH); ctx.stroke();
+  });
+  [0,1,2].forEach(lv => {
+    txt(`L${lv+1}`, BX+(lv*3+1)*SLOT_W+SLOT_W/2, zy-9, '#6b7c8f', `${fs(11)}px 'Poppins', Arial`);
+  });
+  ctx.shadowBlur=5; ctx.shadowColor='rgba(0,0,0,.25)'; ctx.fillStyle='#0b0b0f';
+  pegs.forEach(p => { ctx.beginPath(); ctx.arc(p.position.x,p.position.y,PEG_R,0,Math.PI*2); ctx.fill(); });
+  ctx.shadowBlur=0;
+  strokeRR(BX,BY,BW,BH,0,'rgba(79,147,200,.36)',2);
+}
+
+function drawScores() {
+  const n=fbState.players.length, pw=Math.min(200,(CW-20)/n), sx=(CW-pw*n)/2;
+  ctx.shadowBlur=14; ctx.shadowColor='rgba(248,184,208,.52)';
+  txt('tumble tier', CW/2, 20, '#c93030', `${fs(24)}px 'Luckiest Guy', 'Poppins', Arial`);
+  ctx.shadowBlur=0;
+  txt('ROOM '+currentRoom+'  •  TARGET '+(fbState.winScore||20)+'  •  INITIATOR LOCKS FINAL RESULT', CW/2, 45, '#4f93c8', `900 ${fs(10)}px 'Poppins', Arial`);
+  fbState.players.forEach((p,i) => {
+    const px=sx+i*pw, isCur=i===fbState.turnIndex, col=p.active?p.color:'#9aa8b8';
+    fillRR(px+4,60,pw-8,112,12,isCur?'#fff7e8':'rgba(255,255,255,.52)');
+    strokeRR(px+4,60,pw-8,112,12,isCur?col:'rgba(125,189,242,.28)',isCur?2.5:1);
+    txt(p.name,  px+pw/2, 78,  col, `bold ${fs(13)}px 'Poppins', Arial`);
+    txt(p.score, px+pw/2, 116,  col, `bold ${fs(30)}px 'Poppins', Arial`);
+    const badge = !p.active ? 'ELIMINATED'
+      : p.skipNext ? 'SKIP NEXT'
+      : isCur ? (localState===S.CHARGE ? 'CHARGING…' : 'YOUR TURN ▼')
+      : 'waiting…';
+    const bc = !p.active ? ZFG.red : p.skipNext ? ZFG.blue
+      : isCur ? ZFG.green : '#8fa0ad';
+    txt(badge, px+pw/2, 150, bc, `${fs(11)}px 'Poppins', Arial`);
+  });
+}
+
+function drawPwrBar(y) {
+  const bx=BX+20, bw=BW-40, bh=14;
+  fillRR(bx,y,bw,bh,7,'rgba(255,255,255,.68)');
+  if (power > 0) {
+    ctx.save(); rr(bx,y,bw,bh,4); ctx.clip();
+    const g=ctx.createLinearGradient(bx,0,bx+bw,0);
+    g.addColorStop(0,'#7dbdf2'); g.addColorStop(.52,'#fff0b8'); g.addColorStop(1,'#c93030');
+    ctx.fillStyle=g; ctx.fillRect(bx+2,y+2,(bw-4)*power,bh-4);
+    ctx.restore();
+  }
+  strokeRR(bx,y,bw,bh,7,'rgba(79,147,200,.34)',1);
+  txt('POWER', bx-7, y+bh/2, '#6b7c8f', `bold ${fs(10)}px 'Poppins', Arial`, 'right', 'middle');
+}
+
+// ── Main loop ─────────────────────────────────────────────────────────────────
+let lastT = null;
+function loop(ts) {
+  // Keep looping so game-over overlay continues to render
+  if (fbState.status !== 'playing' && fbState.status !== 'over') return;
+  requestAnimationFrame(loop);
+  const dt = lastT ? Math.min(ts - lastT, 50) : PHYS_STEP; lastT = ts;
+
+  if (localState === S.CHARGE && chargeStart !== null)
+    power = (Math.sin((ts - chargeStart) / PWR_PERIOD * Math.PI*2 - Math.PI/2) + 1) / 2;
+
+  if (localState === S.FLIGHT && ball) {
+    // Fixed-step accumulator: same simulated time per real second on every device
+    physAccum += dt;
+    while (physAccum >= PHYS_STEP) {
+      Engine.update(eng, PHYS_STEP);
+      physAccum -= PHYS_STEP;
+    }
+    unstick();
+    if (ball) {
+      trail.push({ x: ball.position.x, y: ball.position.y });
+      if (trail.length > 18) trail.shift();
+    }
+    flightMs += dt;
+
+    const { x, y } = ball.position;
+    if (y >= BY + ZONE_Y + BALL_R*2) {
+      const slot = Math.max(0, Math.min(N_SLOTS-1, Math.floor((x - BX) / SLOT_W)));
+      if (slot !== lastSlot) { lastSlot = slot; settleT = 0; }
+      if (++settleT >= SETTLE_F) evaluateTurn(slot);
+    } else {
+      settleT = 0; lastSlot = null;
+    }
+
+    if (flightMs >= TIMEOUT_MS && !turnEvaluated) {
+      const slot = Math.max(0, Math.min(N_SLOTS-1, Math.floor((ball.position.x - BX) / SLOT_W)));
+      evaluateTurn(slot);
+    }
+  }
+
+  // ── Draw ────────────────────────────────────────────────────────────────────
+  drawArenaBackground(ts);
+  drawBoard(); drawScores();
+  drawLaunchFlash();
+
+  // Aim cursor (only for current player during WAIT / CHARGE)
+  if ((localState===S.WAIT || localState===S.CHARGE) && isMyTurn()) {
+    const col = curPlayer().color;
+    ctx.save(); ctx.setLineDash([5,5]);
+    ctx.strokeStyle=col+'88'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(aimX,BY+2); ctx.lineTo(aimX,BY+PEG_OFF-6); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle=col;
+    ctx.beginPath(); ctx.moveTo(aimX,BY+PEG_OFF+2); ctx.lineTo(aimX-9,BY+PEG_OFF-13); ctx.lineTo(aimX+9,BY+PEG_OFF-13); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(aimX,BY+9,5,0,Math.PI*2); ctx.fill();
+  }
+
+  // Ball
+  drawTrail();
+  if (ball) {
+    ctx.shadowBlur=12; ctx.shadowColor=BCOL[ballCol];
+    ctx.fillStyle=BCOL[ballCol];
+    ctx.beginPath(); ctx.arc(ball.position.x,ball.position.y,BALL_R,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='rgba(255,255,255,.35)';
+    ctx.beginPath(); ctx.arc(ball.position.x-BALL_R*.3,ball.position.y-BALL_R*.4,BALL_R*.28,0,Math.PI*2); ctx.fill();
+  }
+
+  drawArcadeParticles();
+  drawArcadeOverlay(ts);
+
+  // Bottom bar
+  const boty = BY + BH;
+  fillRR(BX, boty+6, BW, 72, 14, 'rgba(255,247,232,.88)');
+  strokeRR(BX, boty+6, BW, 72, 14, 'rgba(125,189,242,.28)', 1);
+  if (localState === S.RESULT) {
+    strokeRR(BX, boty+6, BW, 72, 8, ZFG[ZONES[resSlot].col], 2);
+    txt(resMsg, CW/2, boty+28, ZFG[ZONES[resSlot].col], `bold ${fs(18)}px 'Poppins', Arial`);
+    txt(isMobile?'Tap to continue':'TAP / SPACE to continue', CW/2, boty+56, '#6b7c8f', `${fs(12)}px 'Poppins', Arial`);
+  } else if (localState === S.CHARGE) {
+    txt(isMobile?'Lift to drop!':'Release SPACE to drop!', CW/2, boty+26, curPlayer()?.color||'#334155', `bold ${fs(15)}px 'Poppins', Arial`);
+    drawPwrBar(boty+44);
+  } else if (localState === S.FLIGHT) {
+    txt('LOCAL BALL ANIMATION — FINAL SLOT LOCKS FROM THROW INITIATOR', CW/2, boty+42, '#4f93c8', `800 ${fs(11)}px 'Poppins', Arial`);
+  } else {
+    const hint = isMyTurn()
+      ? (isMobile ? 'YOUR TURN – slide to aim  ·  tap & hold  ·  lift to drop'
+                  : 'YOUR TURN – mouse to aim  ·  hold SPACE to charge  ·  release to drop')
+      : `${curPlayer()?.name||'…'}'s turn…`;
+    txt(hint, CW/2, boty+26, curPlayer()?.color||'#334155', `${fs(13)}px 'Poppins', Arial`);
+    if (isMyTurn()) drawPwrBar(boty+44);
+  }
+
+  // Game-over overlay
+  if (fbState.status === 'over') {
+    ctx.fillStyle='rgba(255,247,232,.78)'; ctx.fillRect(0,0,CW,CH);
+    const winner = fbState.players.find(p => p.uid === fbState.winnerUid);
+    const col = winner ? winner.color : '#334155';
+    ctx.shadowBlur=22; ctx.shadowColor=col;
+    txt(winner?`${winner.name} Wins!`:'Draw!', CW/2, CH/2-40, col, `bold ${fs(48)}px 'Poppins', Arial`);
+    ctx.shadowBlur=0;
+    if (winner) txt(`Score: ${winner.score} / Target: ${fbState.winScore || 20}`, CW/2, CH/2+20, '#334155', `${fs(24)}px 'Poppins', Arial`);
+    txt('Reload to play again', CW/2, CH/2+70, '#6b7c8f', `${fs(15)}px 'Poppins', Arial`);
+  }
+}
+</script>
+</body>
+</html>

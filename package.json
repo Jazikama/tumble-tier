@@ -1,0 +1,21 @@
+{
+  "name": "tumble-tier",
+  "version": "1.0.0",
+  "description": "Tumble Tier – Online Multiplayer Edition",
+  "main": "index.html",
+  "scripts": {
+    "deploy": "firebase deploy",
+    "serve": "firebase serve"
+  },
+  "keywords": [
+    "game",
+    "multiplayer",
+    "firebase",
+    "realtime"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "firebase-tools": "^13.0.0"
+  }
+}
