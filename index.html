@@ -1,11 +1,458 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tumble Tier</title>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    
+<canvas id="g"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+<script>
+'use strict';
+
+/* ── CONSTANTS ─────────────────────────────────────────── */
+const CW=900, CH=900;
+const BX=132, BY=185, BW=636, BH=614;
+const BALL_R=8, PEG_R=4, PEG_DX=31, PEG_DY=36, PEG_ROWS=12, PEG_OFF=70;
+const N_SLOTS=9, SLOT_W=Math.floor(BW/N_SLOTS), ZONE_H=75, ZONE_Y=BH-ZONE_H;
+const HX=BX+BW/2, HY=BY+20;
+const SETTLE_F=45, TIMEOUT_MS=15000, PWR_PERIOD=2000;
+
+const ZONES=[
+  {col:'green',pts: 1,eff:'go_again',      lbl:'GO AGAIN'},
+  {col:'blue', pts:-1,eff:'end_turn',       lbl:'END TURN'},
+  {col:'red',  pts: 0,eff:'eliminated',     lbl:'ELIM!'},
+  {col:'green',pts: 2,eff:'go_again',       lbl:'GO AGAIN'},
+  {col:'blue', pts: 0,eff:'swap_scores',    lbl:'SWAP'},
+  {col:'red',  pts: 0,eff:'lose_next_turn', lbl:'SKIP TURN'},
+  {col:'green',pts: 3,eff:'go_again',       lbl:'GO AGAIN'},
+  {col:'blue', pts: 1,eff:'go_again',       lbl:'GO AGAIN'},
+  {col:'red',  pts: 0,eff:'reset_score',    lbl:'RESET'},
+];
+const ZBG={green:'#1a5229',blue:'#152060',red:'#5a151a'};
+const ZFG={green:'#32cd50',blue:'#3c82ff',red:'#e03737'};
+const BCOL={green:'#32cd50',blue:'#3c82ff',red:'#e03737'};
+const PCOL=['#f0b428','#50aeff','#c864ff','#ff8746'];
+const PNAM=['Player 1','Player 2','Player 3','Player 4'];
+
+/* ── CANVAS ────────────────────────────────────────────── */
+const canvas=document.getElementById('g');
+canvas.width=CW; canvas.height=CH;
+const ctx=canvas.getContext('2d');
+
+const isMobile='ontouchstart' in window||navigator.maxTouchPoints>0;
+let dpy=Math.min(window.innerWidth,window.innerHeight,900);
+const fs=n=>Math.round(n*900/dpy);
+window.addEventListener('resize',()=>{dpy=Math.min(window.innerWidth,window.innerHeight,900);});
+window.addEventListener('orientationchange',()=>{setTimeout(()=>{dpy=Math.min(window.innerWidth,window.innerHeight,900);},200);});
+
+function rr(x,y,w,h,r){
+  const R=Math.min(r,w/2,h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+R,y); ctx.lineTo(x+w-R,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+R);
+  ctx.lineTo(x+w,y+h-R);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-R,y+h);
+  ctx.lineTo(x+R,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-R);
+  ctx.lineTo(x,y+R);
+  ctx.quadraticCurveTo(x,y,x+R,y);
+  ctx.closePath();
+}
+function fillRR(x,y,w,h,r,s){ctx.fillStyle=s;rr(x,y,w,h,r);ctx.fill();}
+function strokeRR(x,y,w,h,r,s,lw){ctx.strokeStyle=s;ctx.lineWidth=lw||1.5;rr(x,y,w,h,r);ctx.stroke();}
+function txt(s,x,y,col,font,align,base){
+  ctx.fillStyle=col;ctx.font=font;
+  ctx.textAlign=align||'center';ctx.textBaseline=base||'middle';
+  ctx.fillText(s,x,y);
+}
+
+/* ── STATE MACHINE ─────────────────────────────────────── */
+const S={MENU:'menu',WAIT:'wait',CHARGE:'charge',FLIGHT:'flight',RESULT:'result',OVER:'over'};
+let gs=S.MENU, players=[], ci=0, goAgain=false;
+let resMsg='', resSlot=0, winner=null, ballCol='green';
+
+function mkPlayers(n){
+  players=Array.from({length:n},(_,i)=>({
+    idx:i,name:PNAM[i],color:PCOL[i],score:0,active:true,skipNext:false
+  }));
+  ci=0; goAgain=false; winner=null;
+}
+const cur=()=>players[ci];
+const alive=()=>players.filter(p=>p.active);
+
+function applyZone(slot){
+  const z=ZONES[slot], p=cur();
+  let ga=false, parts=[];
+  p.score+=z.pts;
+  if(z.pts>0) parts.push(`+${z.pts} PT${z.pts>1?'S':''}`);
+  else if(z.pts<0) parts.push(`${z.pts} PT`);
+  switch(z.eff){
+    case 'go_again':      ga=true; parts.push('Go Again!'); break;
+    case 'end_turn':      parts.push('End Turn.'); break;
+    case 'eliminated':    p.active=false; parts.push(`${p.name} Eliminated!`); break;
+    case 'swap_scores':{
+      const others=players.filter(x=>x.active&&x.idx!==p.idx);
+      if(others.length){
+        const t=others[Math.floor(Math.random()*others.length)];
+        [p.score,t.score]=[t.score,p.score];
+        parts.push(`Swap with ${t.name}!`);
+      } else parts.push('No one to swap with.');
+      break;
+    }
+    case 'lose_next_turn': p.skipNext=true; parts.push('Lose Next Turn!'); break;
+    case 'reset_score':    p.score=0; parts.push('Score Reset to 0!'); break;
+  }
+  return{ga,msg:parts.join('  ')};
+}
+
+function nextTurn(){
+  const a=alive();
+  if(a.length<=1){winner=a[0]||null; gs=S.OVER; return;}
+  if(!goAgain){
+    for(let i=0;i<players.length;i++){
+      ci=(ci+1)%players.length;
+      const p=players[ci];
+      if(!p.active) continue;
+      if(p.skipNext){p.skipNext=false; continue;}
+      break;
+    }
+  }
+  goAgain=false; gs=S.WAIT;
+}
+
+/* ── PHYSICS ───────────────────────────────────────────── */
+const{Engine,World,Bodies,Body}=Matter;
+let eng,world,ball,pegs=[];
+let settleT=0, flightMs=0, lastSlot=null;
+
+function buildWorld(){
+  eng=Engine.create();
+  eng.gravity.y=0.5; eng.gravity.scale=0.001;
+  world=eng.world; ball=null; pegs=[];
+  const WO={isStatic:true,restitution:0.3,friction:0.5};
+  const T=22;
+  World.add(world,[
+    Bodies.rectangle(BX-T/2,    BY+BH/2,   T,BH,   WO),
+    Bodies.rectangle(BX+BW+T/2, BY+BH/2,   T,BH,   WO),
+    Bodies.rectangle(BX+BW/2,   BY+BH+T/2, BW,T,   WO),
+    Bodies.rectangle(BX+BW/2,   BY-T/2,    BW,T,   WO),
+  ]);
+  const zt=BY+ZONE_Y, zh=BY+BH-zt;
+  for(let i=1;i<N_SLOTS;i++)
+    World.add(world,Bodies.rectangle(BX+i*SLOT_W,zt+zh/2,4,zh,
+      {isStatic:true,restitution:0.15,friction:0.6}));
+  for(let row=0;row<PEG_ROWS;row++){
+    const py=BY+PEG_OFF+row*PEG_DY;
+    const ox=(row%2===1)?PEG_DX/2:0;
+    let px=BX+PEG_DX+ox;
+    while(px+PEG_R<BX+BW-PEG_R){
+      const p=Bodies.circle(px,py,PEG_R,{isStatic:true,restitution:0.76,friction:0.25});
+      pegs.push(p); World.add(world,p); px+=PEG_DX;
+    }
+  }
+}
+
+function launch(ax,pwr){
+  if(ball){World.remove(world,ball);ball=null;}
+  const side=ax>HX?1:(ax<HX?-1:(Math.random()>.5?1:-1));
+  const vx=(ax-HX)*0.025*pwr+side*(0.5+Math.random()*1.0);
+  ball=Bodies.circle(ax,HY,BALL_R,{restitution:0.76,friction:0.18,frictionAir:0.003});
+  Body.setVelocity(ball,{x:vx,y:0});
+  World.add(world,ball);
+  settleT=0; flightMs=0; lastSlot=null;
+}
+
+function removeBall(){if(ball){World.remove(world,ball);ball=null;}}
+
+function getSlot(){
+  if(!ball) return null;
+  const{x,y}=ball.position;
+  return y>=BY+ZONE_Y+BALL_R*2
+    ?Math.max(0,Math.min(N_SLOTS-1,Math.floor((x-BX)/SLOT_W)))
+    :null;
+}
+
+function unstick(){
+  if(!ball) return;
+  const{x,y}=ball.position,v=ball.velocity;
+  if(y>=BY+PEG_OFF-5&&y<=BY+ZONE_Y&&Math.hypot(v.x,v.y)<0.7){
+    const k=(Math.random()>.5?1:-1)*2.8;
+    Body.setVelocity(ball,{x:v.x+k,y:Math.max(v.y,2.8)});
+  }
+}
+
+/* ── DRAW: BOARD ───────────────────────────────────────── */
+function drawBoard(){
+  ctx.fillStyle='#1c1c30'; ctx.fillRect(BX,BY,BW,BH);
+  ctx.fillStyle='#262640'; ctx.fillRect(BX,BY,BW,PEG_OFF);
+
+  const zy=BY+ZONE_Y;
+  ZONES.forEach((z,i)=>{
+    const zx=BX+i*SLOT_W, cx=zx+SLOT_W/2;
+    fillRR(zx,zy,SLOT_W,ZONE_H,0,ZBG[z.col]);
+    strokeRR(zx+.5,zy+.5,SLOT_W-1,ZONE_H-1,0,ZFG[z.col]+'88',1);
+    if(z.pts!==0) txt(z.pts>0?`+${z.pts}`:`${z.pts}`,cx,zy+18,'#fff',`bold ${fs(13)}px Arial`);
+    if(dpy>=450) txt(z.lbl,cx,zy+ZONE_H-11,'#aaa',`${fs(9)}px Arial`);
+  });
+
+  ctx.strokeStyle='rgba(160,160,200,.4)'; ctx.lineWidth=2;
+  [3,6].forEach(s=>{
+    const sx=BX+s*SLOT_W;
+    ctx.beginPath();ctx.moveTo(sx,zy-8);ctx.lineTo(sx,BY+BH);ctx.stroke();
+  });
+  [0,1,2].forEach(lv=>{
+    txt(`L${lv+1}`,BX+(lv*3+1)*SLOT_W+SLOT_W/2,zy-9,'rgba(160,160,180,.7)',`${fs(11)}px Arial`);
+  });
+
+  ctx.shadowBlur=5; ctx.shadowColor='rgba(200,210,230,.5)';
+  ctx.fillStyle='#d0d0e8';
+  pegs.forEach(p=>{
+    const{x,y}=p.position;
+    ctx.beginPath();ctx.arc(x,y,PEG_R,0,Math.PI*2);ctx.fill();
+  });
+  ctx.shadowBlur=0;
+  strokeRR(BX,BY,BW,BH,0,'rgba(150,150,180,.5)',2);
+}
+
+/* ── DRAW: BALL ────────────────────────────────────────── */
+function drawBall(){
+  if(!ball) return;
+  const{x,y}=ball.position, col=BCOL[ballCol]||'#fff';
+  ctx.shadowBlur=14; ctx.shadowColor=col;
+  ctx.fillStyle=col; ctx.beginPath();ctx.arc(x,y,BALL_R,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,255,255,.4)';
+  ctx.beginPath();ctx.arc(x-BALL_R*.3,y-BALL_R*.4,BALL_R*.28,0,Math.PI*2);ctx.fill();
+}
+
+/* ── DRAW: AIM CURSOR ──────────────────────────────────── */
+function drawAim(){
+  if(gs!==S.WAIT&&gs!==S.CHARGE) return;
+  const col=cur().color;
+  ctx.save(); ctx.setLineDash([5,5]);
+  ctx.strokeStyle=col+'88'; ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(aimX,BY+2);ctx.lineTo(aimX,BY+PEG_OFF-6);ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle=col;
+  ctx.beginPath();
+  ctx.moveTo(aimX,BY+PEG_OFF+2);
+  ctx.lineTo(aimX-9,BY+PEG_OFF-13);
+  ctx.lineTo(aimX+9,BY+PEG_OFF-13);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();ctx.arc(aimX,BY+9,5,0,Math.PI*2);ctx.fill();
+}
+
+/* ── DRAW: SCOREBOARD ──────────────────────────────────── */
+function drawScores(){
+  const n=players.length, pw=Math.min(200,(CW-20)/n), sx=(CW-pw*n)/2;
+  ctx.shadowBlur=10; ctx.shadowColor='#32cd50';
+  txt('TUMBLE TIER',CW/2,18,'#32cd50',`bold ${fs(15)}px Arial`);
+  ctx.shadowBlur=0;
+  players.forEach((p,i)=>{
+    const px=sx+i*pw;
+    const isCur=i===ci&&(gs===S.WAIT||gs===S.CHARGE||gs===S.FLIGHT);
+    const col=p.active?p.color:'#444455';
+    fillRR(px+4,36,pw-8,138,9,isCur?'#2e2e4a':'#1c1c30');
+    strokeRR(px+4,36,pw-8,138,9,isCur?col:'#363650',isCur?2.5:1);
+    const cx=px+pw/2;
+    txt(p.name, cx,55, col,`bold ${fs(14)}px Arial`);
+    txt(p.score,cx,96, col,`bold ${fs(32)}px Arial`);
+    let badge,bc;
+    if(!p.active)      {badge='ELIMINATED'; bc=ZFG.red;}
+    else if(p.skipNext){badge='SKIP NEXT';  bc=ZFG.blue;}
+    else if(isCur)     {badge=gs===S.CHARGE?'CHARGING…':'YOUR TURN ▼'; bc=ZFG.green;}
+    else               {badge='waiting…';   bc='#505060';}
+    txt(badge,cx,133,bc,`${fs(12)}px Arial`);
+  });
+}
+
+/* ── DRAW: BOTTOM BAR ──────────────────────────────────── */
+function drawBottom(){
+  const boty=BY+BH;
+  fillRR(BX,boty+6,BW,70,8,'#1c1c30');
+
+  if(gs===S.RESULT){
+    const col=ZFG[ZONES[resSlot].col];
+    strokeRR(BX,boty+6,BW,70,8,col,2);
+    txt(resMsg,CW/2,boty+28,col,`bold ${fs(18)}px Arial`);
+    txt(isMobile?'Tap to continue':'Press SPACE to continue',CW/2,boty+52,'#555566',`${fs(13)}px Arial`);
+    return;
+  }
+
+  strokeRR(BX,boty+6,BW,70,8,cur().color+'44',1);
+  if(gs===S.WAIT){
+    const hint=isMobile
+      ?`${cur().name}:  slide to aim  ·  tap & hold  ·  lift to drop`
+      :`${cur().name}:  move mouse to aim  ·  hold SPACE to charge  ·  release to drop`;
+    txt(hint,CW/2,boty+22,cur().color,`${fs(13)}px Arial`);
+    drawPwrBar(boty+38,0);
+  } else if(gs===S.CHARGE){
+    txt(isMobile?'Lift to drop!':'Release SPACE to drop!',CW/2,boty+22,cur().color,`bold ${fs(15)}px Arial`);
+    drawPwrBar(boty+38,power);
+  } else if(gs===S.FLIGHT){
+    txt('Ball in flight…',CW/2,boty+40,'#555566',`${fs(15)}px Arial`);
+  }
+}
+
+function drawPwrBar(y,pwr){
+  const bx=BX+20, bw=BW-40, bh=14;
+  fillRR(bx,y,bw,bh,4,'#252538');
+  if(pwr>0){
+    ctx.save(); rr(bx,y,bw,bh,4); ctx.clip();
+    const g=ctx.createLinearGradient(bx,0,bx+bw,0);
+    g.addColorStop(0,'#22cc44'); g.addColorStop(.5,'#ddcc22'); g.addColorStop(1,'#cc2222');
+    ctx.fillStyle=g; ctx.fillRect(bx+2,y+2,(bw-4)*pwr,bh-4);
+    ctx.restore();
+  }
+  strokeRR(bx,y,bw,bh,4,'#444455',1);
+  txt('POWER',bx-7,y+bh/2,'#444455',`bold ${fs(10)}px Arial`,'right','middle');
+}
+
+/* ── DRAW: GAME OVER ───────────────────────────────────── */
+function drawOver(){
+  ctx.fillStyle='rgba(0,0,0,.68)'; ctx.fillRect(0,0,CW,CH);
+  const col=winner?winner.color:'#fff';
+  ctx.shadowBlur=22; ctx.shadowColor=col;
+  txt(winner?`${winner.name}  Wins!`:'Draw!',CW/2,CH/2-50,col,`bold ${fs(52)}px Arial`);
+  ctx.shadowBlur=0;
+  if(winner) txt(`Final score: ${winner.score}`,CW/2,CH/2+12,'#fff',`${fs(26)}px Arial`);
+  txt(isMobile?'Tap to play again':'SPACE – play again    ·    ESC – menu',CW/2,CH/2+72,'#555566',`${fs(17)}px Arial`);
+}
+
+/* ── DRAW: MENU ────────────────────────────────────────── */
+let menuBtns=[], mx=0, my=0;
+function drawMenu(){
+  ctx.fillStyle='#0f0f1a'; ctx.fillRect(0,0,CW,CH);
+  ctx.shadowBlur=22; ctx.shadowColor='#32cd50';
+  txt('TUMBLE  TIER',CW/2,185,'#32cd50',`bold ${fs(56)}px Arial`);
+  ctx.shadowBlur=0;
+  txt('Plinko-style physics party game',CW/2,252,'#555566',`${fs(18)}px Arial`);
+  txt('Select number of players:',CW/2,338,'#ccccdd',`${fs(20)}px Arial`);
+
+  menuBtns=[[2,'#32cd50'],[3,'#3c82ff'],[4,'#e03737']].map(([n,col],i)=>{
+    const bx=CW/2-185+i*145, by=375, bw=120, bh=100;
+    const hov=mx>=bx&&mx<=bx+bw&&my>=by&&my<=by+bh;
+    fillRR(bx,by,bw,bh,13,hov?col:col+'aa');
+    strokeRR(bx,by,bw,bh,13,'#ffffff22',1.5);
+    txt(n,bx+bw/2,by+bh/2,'#fff',`bold ${fs(34)}px Arial`);
+    return{x:bx,y:by,w:bw,h:bh,n};
+  });
+
+  txt(isMobile?'tap a button to choose players':'click  or  press  2 / 3 / 4',CW/2,492,'#444455',`${fs(15)}px Arial`);
+
+  if(dpy>=450){
+    fillRR(CW/2-285,514,570,148,10,'#1c1c30');
+    strokeRR(CW/2-285,514,570,148,10,'#2a2a42',1);
+    txt('HOW TO PLAY',CW/2,534,'#555566',`bold ${fs(13)}px Arial`);
+    txt('Move mouse left/right over the board to aim where the ball drops',CW/2,558,'#3a3a52',`${fs(13)}px Arial`);
+    txt('Hold SPACE (or tap & hold) to charge the power bar · release to drop',CW/2,579,'#3a3a52',`${fs(13)}px Arial`);
+    txt('Land in colour-coded zones to earn points or trigger special effects',CW/2,600,'#3a3a52',`${fs(13)}px Arial`);
+    txt('Green = safe  ·  Blue = wild  ·  Red = danger',CW/2,621,'#3a3a52',`${fs(12)}px Arial`);
+  }
+}
+
+/* ── INPUT ─────────────────────────────────────────────── */
+let aimX=HX, power=0, chargeStart=null;
+
+function coords(cx,cy){
+  const r=canvas.getBoundingClientRect();
+  return[(cx-r.left)*(CW/r.width),(cy-r.top)*(CH/r.height)];
+}
+canvas.addEventListener('mousemove',e=>{
+  [mx,my]=coords(e.clientX,e.clientY);
+  if(gs===S.WAIT||gs===S.CHARGE)
+    aimX=Math.max(BX+BALL_R+4,Math.min(BX+BW-BALL_R-4,mx));
+});
+canvas.addEventListener('click',e=>{
+  [mx,my]=coords(e.clientX,e.clientY);
+  if(gs===S.MENU) menuBtns.forEach(b=>{if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h)startGame(b.n);});
+});
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();spaceDown();}
+  if(e.code==='Escape'&&gs===S.OVER) gs=S.MENU;
+  if('234'.includes(e.key)&&gs===S.MENU) startGame(+e.key);
+});
+document.addEventListener('keyup',e=>{if(e.code==='Space'){e.preventDefault();spaceUp();}});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  [mx,my]=coords(e.touches[0].clientX,e.touches[0].clientY);
+  if(gs===S.WAIT||gs===S.CHARGE)
+    aimX=Math.max(BX+BALL_R+4,Math.min(BX+BW-BALL_R-4,mx));
+},{passive:false});
+canvas.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  [mx,my]=coords(e.touches[0].clientX,e.touches[0].clientY);
+  if(gs===S.WAIT||gs===S.CHARGE)
+    aimX=Math.max(BX+BALL_R+4,Math.min(BX+BW-BALL_R-4,mx));
+  if(gs===S.MENU) menuBtns.forEach(b=>{if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h)startGame(b.n);});
+  else spaceDown();
+},{passive:false});
+canvas.addEventListener('touchend',e=>{e.preventDefault();spaceUp();},{passive:false});
+
+function spaceDown(){
+  if(gs===S.WAIT)   {gs=S.CHARGE; chargeStart=performance.now();}
+  if(gs===S.RESULT) {removeBall(); nextTurn();}
+  if(gs===S.OVER)   startGame(players.length);
+}
+function spaceUp(){
+  if(gs!==S.CHARGE) return;
+  ballCol=['green','blue','red'][Math.floor(Math.random()*3)];
+  launch(aimX,power);
+  gs=S.FLIGHT;
+}
+
+/* ── GAME FLOW ─────────────────────────────────────────── */
+function startGame(n){
+  mkPlayers(n); buildWorld();
+  aimX=HX; power=0; chargeStart=null; gs=S.WAIT;
+}
+
+/* ── MAIN LOOP ─────────────────────────────────────────── */
+let lastT=null;
+function loop(ts){
+  requestAnimationFrame(loop);
+  const dt=lastT?Math.min(ts-lastT,50):16.67;
+  lastT=ts;
+
+  if(gs===S.CHARGE&&chargeStart!==null)
+    power=(Math.sin((ts-chargeStart)/PWR_PERIOD*Math.PI*2-Math.PI/2)+1)/2;
+
+  if(gs===S.FLIGHT&&eng){
+    for(let i=0;i<3;i++) Engine.update(eng,dt/3);
+    unstick();
+    flightMs+=dt;
+
+    const slot=getSlot();
+    if(slot!==null){
+      if(slot!==lastSlot){lastSlot=slot;settleT=0;}
+      if(++settleT>=SETTLE_F){
+        const{ga,msg}=applyZone(slot);
+        resMsg=msg; resSlot=slot; goAgain=ga; gs=S.RESULT;
+      }
+    } else {
+      settleT=Math.max(0,settleT-1);
+    }
+
+    if(flightMs>=TIMEOUT_MS){
+      const pos=ball?ball.position:{x:HX};
+      const fb=Math.max(0,Math.min(N_SLOTS-1,Math.floor((pos.x-BX)/SLOT_W)));
+      const{ga,msg}=applyZone(fb);
+      resMsg=msg; resSlot=fb; goAgain=ga; gs=S.RESULT;
+    }
+  }
+
+  if(gs===S.MENU){drawMenu();return;}
+  ctx.fillStyle='#0f0f1a'; ctx.fillRect(0,0,CW,CH);
+  drawBoard(); drawScores(); drawAim();
+  if(gs===S.FLIGHT||gs===S.RESULT) drawBall();
+  drawBottom();
+  if(gs===S.OVER) drawOver();
+}
+
+requestAnimationFrame(loop);
+</script>
 </body>
 </html>
